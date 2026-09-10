@@ -1,0 +1,296 @@
+---
+title: "Movie Ratings Analysis"
+author: "Muhammad Imran"
+format:
+  html:
+    include-in-header:
+      text: |
+        \usepackage{ragged2e}
+        \AtBeginDocument{\justifying}
+editor: visual
+---
+
+# 1. Introduction
+
+This assignment investigates movie ratings collected from five participants. Six recent popular movies were selected, and participants (5 of them) were asked to rate each movie they had seen using a 1–5 rating scale.
+
+The achievements of this assignment are creating a database, three tables, populating the tables with constant values and then storing the data into database.
+
+Subsequently, importing the database into R and analyse using it.
+
+# 2. Questions to answer through this assignment
+
+The assignment addresses the following questions:
+
+1\. Which movie received the highest average rating?
+
+2\. How many ratings did each movie receive?
+
+3\. How should missing ratings be handled?
+
+4\. How do individual participants differ in their average ratings?
+
+5\. How can the data be represented as a user-item matrix?
+
+# 3. Database Design
+
+The database contains three tables:
+
+- users (user_id, name)
+
+- movies(movie_id, title)
+
+- ratings (user_id, movie_id, rating)
+
+The \`ratings\` table connects users and movies through foreign keys. The primary key of the ratings table consists of the combination of \`user_id\` and \`movie_id\`, ensuring that a participant cannot submit multiple ratings for the same movie.
+
+The required packages are as:
+
+```{r}
+library(DBI)
+library(RPostgres)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+```
+
+# 4. Connecting with the PostgreSQL
+
+The database password is intentionally not included in the source code. However the password is "Window98", the user has to give it on the popup.
+
+```{r}
+library(DBI)
+library(RPostgres)
+
+con <- dbConnect(
+  RPostgres::Postgres(),
+  dbname = "Movie_ratings",
+  host = "127.0.0.1",
+  port = 5432,
+  user = "postgres",
+  password = "Window98"
+)
+
+dbListTables(con)
+```
+
+ensuring the connection is established and showing the tables:
+
+```{r}
+dbListTables(con)
+```
+
+# 5. Retrieve Data from SQL
+
+```{r}
+movie_ratings <- dbGetQuery(
+  con,
+  "
+  SELECT
+      u.user_id,
+      u.user_name,
+      m.movie_id,
+      m.title,
+      m.release_year,
+      r.rating
+  FROM ratings AS r
+  INNER JOIN users AS u
+      ON r.user_id = u.user_id
+  INNER JOIN movies AS m
+      ON r.movie_id = m.movie_id
+  ORDER BY u.user_id, m.movie_id
+  "
+)
+```
+
+```{r}
+#head(movie_ratings)
+knitr::kable(
+  movie_ratings,
+  caption = "Movie Ratings Data"
+)
+```
+
+# 6. Statistical Analysis of the Data
+
+```{r}
+summary(movie_ratings)
+```
+
+# 7. Missing Data
+
+Not every participant had seen every movie. Therefore, missing ratings
+
+are represented by NULL in PostgreSQL and become NA in R.
+
+These values are not treated as zero because zero is not part of the
+
+1–5 rating scale.
+
+First, the number of missing ratings is calculated:
+
+```{r}
+sum(is.na(movie_ratings$rating))
+```
+
+This is telling that there are 6 mission/NULL values in the table.
+
+```{r}
+mean(is.na(movie_ratings$rating)) * 100
+```
+
+This is showing that 20% values are missing.
+
+```{r}
+library(dplyr)
+```
+
+```{r}
+movie_rating_counts <- movie_ratings %>%
+  group_by(title) %>%
+  summarise(
+    ratings_received = sum(!is.na(rating)),
+    missing_ratings = sum(is.na(rating))
+  )
+```
+
+```{r}
+movie_rating_counts
+```
+
+# 8. Ratings by Movie
+
+```{r}
+movie_summary <- movie_ratings %>%
+  group_by(title) %>%
+  summarise(
+    number_of_ratings = sum(!is.na(rating)),
+    average_rating = mean(rating, na.rm = TRUE),
+    minimum_rating = min(rating, na.rm = TRUE),
+    maximum_rating = max(rating, na.rm = TRUE)
+  ) %>%
+  arrange(desc(average_rating))
+movie_summary
+```
+
+# 9. Highest-Rated Movie
+
+```{r}
+movie_summary %>%
+  slice_max(
+    order_by = average_rating,
+    n = 1
+  )
+```
+
+# 10. Calculate ratings (Average) by participant
+
+```{r}
+user_summary <- movie_ratings %>%
+  group_by(user_name) %>%
+  summarise(
+    number_of_ratings = sum(!is.na(rating)),
+    average_rating = mean(rating, na.rm = TRUE)
+  )
+user_summary
+```
+
+# 11. Generating a user/movie matrix
+
+```{r}
+library(dplyr)
+library(tidyr)
+
+# 1. Reshape and ensure all columns render cleanly
+rating_matrix <- movie_ratings %>%
+  select(user_id, user_name, title, rating) %>%
+  pivot_wider(
+    id_cols = c(user_id, user_name),
+    names_from = title,
+    values_from = rating,
+    values_fill = NA  # Replaces unrated cells explicitly with NA
+  )
+
+# 2. Print all columns in console without truncation
+as.data.frame(rating_matrix)
+
+```
+
+# 12. Creating visualizations
+
+```{r}
+library(ggplot2)
+
+ggplot(
+  movie_summary,
+  aes(
+    x = reorder(title, average_rating),
+    y = average_rating
+  )
+) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Average Movie Ratings",
+    x = "Movie",
+    y = "Average Rating"
+  ) +
+  theme_minimal()
+```
+
+Visualize number of ratings
+
+```{r}
+ggplot(
+  movie_summary,
+  aes(
+    x = reorder(title, number_of_ratings),
+    y = number_of_ratings
+  )
+) +
+  geom_col() +
+  coord_flip() +
+  labs(
+    title = "Number of Ratings Received by Movie",
+    x = "Movie",
+    y = "Number of Ratings"
+  ) +
+  theme_minimal()
+```
+
+Optional: Distribution of ratings
+
+```{r}
+ggplot(
+  movie_ratings %>% filter(!is.na(rating)),
+  aes(x = rating)
+) +
+  geom_bar() +
+  scale_x_continuous(breaks = 1:5) +
+  labs(
+    title = "Distribution of Movie Ratings",
+    x = "Rating",
+    y = "Number of Responses"
+  ) +
+  theme_minimal()
+```
+
+# 13. Interpretation
+
+The average-rating analysis identifies which movies were most highly rated by the participants. The number of ratings is also important because not every participant had seen every movie. Therefore, averages should be interpreted together with the number of observations contributing to each average. Missing ratings were not converted to zero. Instead, they were treated as missing observations because a participant who had not seen a movie could not reasonably provide a rating.
+
+# 14. Limitations
+
+This dataset has several limitations.
+
+First, the sample size is small because the assignment requires only five participants. Therefore, the results cannot be eneralized to the broader population.
+
+Second, participants may have different movie preferences and levels of familiarity with the selected movies.
+
+Third, missing ratings may affect comparisons because some movies may have been seen by more participants than others.
+
+Finally, the dataset is intended for demonstrating SQL and R concepts rather than producing statistically representative estimates of movie quality.
+
+# 15. Conclusion
+
+This Assignment demonstrates a complete workflow from data collection to database storage and statistical analysis. The movie ratings were stored using a normalized relational database containing users, movies, and ratings tables. SQL joins were then used to retrieve an analysis-ready dataset, which was imported into R for data cleaning, missing-data handling, summary statistics, and visualization. The resulting user-item matrix also demonstrates how a simple movie rating dataset can serve as the foundation for recommender-system methods such as collaborative filtering.
