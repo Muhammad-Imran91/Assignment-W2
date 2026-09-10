@@ -2,7 +2,7 @@
 title: "Movie Ratings Analysis"
 author: "Muhammad Imran"
 format:
-  html:
+  pdf:
     include-in-header:
       text: |
         \usepackage{ragged2e}
@@ -68,7 +68,7 @@ con <- dbConnect(
   host = "127.0.0.1",
   port = 5432,
   user = "postgres",
-  password = "Window98"
+  password = "*******"
 )
 
 dbListTables(con)
