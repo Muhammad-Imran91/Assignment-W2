@@ -1,0 +1,907 @@
+---
+title: "Evaluation of Classification Model Performance"
+author: "Muhammad Imran"
+format:
+   pdf:
+    include-in-header:
+      text: |
+        \usepackage{ragged2e}
+        \AtBeginDocument{\justifying}
+editor: visual
+---
+
+1.  **Loading the required packages**
+
+    The Assignment will use the tidyverse for data manipulation and visualization. it will also use given penguin_predictions.csv from github. The assignment is tried after having a deep look into the the content of the "Performance Metrics for classfification Problems in machine learning"
+
+```{r}
+library(tidyverse)
+library(knitr)
+```
+
+2.  **Loading the Dataset from github**
+
+    The assignment provides penguin_predictions.csv. As the .csv file is in github, we can read the file directly from github.
+
+```{r}
+penguins <- read_csv(
+  "https://raw.githubusercontent.com/acatlin/data/refs/heads/master/penguin_predictions.csv"
+)
+```
+
+We can also traverse the record as follows with the one liner code:
+
+```{r}
+head(penguins)
+```
+
+lets try to checki structure:
+
+```{r}
+str(penguins)
+```
+
+now I am presenting the Summary of the .csv file
+
+```{r}
+summary(penguins)
+```
+
+3.  **Exploring the Data now**
+
+    Before calculating performance metrics, we need to understand what the variables represent. check the following code and its result.
+
+```{r}
+glimpse(penguins)
+```
+
+We can also check whether there are missing values:
+
+```{r}
+colSums(is.na(penguins))
+```
+
+Ideally, the relevant columns should contain no missing values. We can also examine the actual values of sex, this tells us how many observations belong to each class.
+
+```{r}
+count(penguins, sex)
+```
+
+4.  **Understand the Target Variable**
+
+The target variable is sex, the two classes represent the binary classification problem. Now let us calculate the number and percentage of observations in each class:
+
+```{r}
+class_distribution <- penguins %>%
+  count(sex) %>%
+  mutate(
+    percentage = n / sum(n) * 100
+  )
+
+class_distribution
+```
+
+the below code will show a cleaner representation of the table:
+
+```{r}
+kable(
+  class_distribution,
+  digits = 2,
+  col.names = c("Actual Class", "Count", "Percentage")
+)
+```
+
+5.  **Plotting the Distribution of the Actual Class**
+
+    A simple bar chart is useful, but we can nake informative by displaying both the count and percentage.
+
+    ```{r}
+    class_distribution %>%
+      ggplot(aes(x = sex, y = n)) +
+      geom_col() +
+      geom_text(
+        aes(label = paste0(n, " (", round(percentage, 1), "%)")),
+        vjust = -0.5
+      ) +
+      labs(
+        title = "Distribution of Actual Penguin Sex",
+        x = "Actual Class",
+        y = "Number of Observations"
+      ) +
+      theme_minimal()
+    ```
+
+6.  **Analytical interpretation**
+
+This graph allows us to determine whether the target variable is balanced or not. If one class is considerably more common than the other, a model can obtain deceptively high accuracy simply by predicting the majority class most of the time. This is why we need a null error rate before judging the classification model.
+
+7.  **Calculate the Null Error Rate**
+
+    The null model ignores all predictors and simply predicts the most common class for every observation.
+
+    First, determine the majority class:
+
+    ```{r}
+    majority_class <- penguins %>%
+      count(sex) %>%
+      slice_max(n, n = 1) %>%
+      pull(sex)
+
+    majority_class
+    ```
+
+Now, i am going to calculate the proportion belonging to the majority class:
+
+```{r}
+majority_proportion <- penguins %>%
+  summarise(
+    majority_proportion = mean(sex == majority_class)
+  ) %>%
+  pull(majority_proportion)
+
+majority_proportion
+```
+
+The null error rate is:
+
+```{r}
+null_error_rate <- 1 - majority_proportion
+
+null_error_rate
+```
+
+And its percentage is:
+
+```{r}
+paste0(round(null_error_rate * 100, 2), "%")
+```
+
+But lets find out what its mean, first. Suppose, for example, that 52% of observation belongs to the majority of class so the null error rate would be 1-0.52=0.48 or 48%. this means a model that simply predicts the majority class for every observations would make error approximately 48% of the time.
+
+8.  **Why this is important?**
+
+The null error rate provides a baseline for evaluating the classification model. For example, if the null error rate is 48%, a model with an error rate of 45% is not particularly impressive. On the other hand, if the model's error rate is 10%, it is performing substantially better than the baseline. Therefore, accuracy should not be interpreted in isolation. It should be compared with the performance of a simple baseline model.
+
+9.  **Undrstand Probability Thresholds**
+
+    The important variable for this assignment is .pred_female. this represents the model's estimated probability that an observation belongs to the female class.
+
+    Let's look at some predictions:
+
+    ```{r}
+    penguins %>%
+      select(.pred_female, .pred_class, sex) %>%
+      head(10)
+    ```
+
+The important point is that the model produces a probability first. For example: .pred_female = 0.15 means model estimates a 15% probability that the observation belongs to the female class.
+
+**If we use a threshold of 0.5: ( .pred_female? 0.5 , 1 , 0)**
+
+then
+
+0.15 → predicted 0
+
+0.60 → predicted 1
+
+0.90 → predicted 1
+
+**But if we change the threshold to 0.2: ( .pred_female \> 0.2, 1, 0)**
+
+then more observations will be classified as positive.
+
+This is the central idea behind the assignment.
+
+**10. Define the Three Thresholds**
+
+Now, we need to evaluate:
+
+```{r}
+thresholds <- c(0.2, 0.5, 0.8)
+
+thresholds
+```
+
+We will create predictions for each threshold.
+
+11. **for threshold 0.2**
+
+    ```{r}
+    penguins_02 <- penguins %>%
+      mutate(
+        predicted = ifelse(.pred_female > 0.2, 1, 0)
+      )
+
+    ```
+
+```{r}
+penguins_02 %>%
+  select(.pred_female, predicted, sex) %>%
+  head(10)
+```
+
+```         
+
+
+```
+
+12. **Calculate TP, FP, TN and FN at 0.2**
+
+Let us assume:
+
+1 = Female
+
+0 = Not Female, then we define
+
+**True Positive**
+
+Predicted female and actually female:
+
+```{r}
+TP_02 <- sum(
+  penguins_02$predicted == 1 &
+    penguins_02$sex == 1
+)
+```
+
+**False Positive**
+
+Predicted female but actually not female:
+
+```{r}
+FP_02 <- sum(
+  penguins_02$predicted == 1 &
+    penguins_02$sex == 0
+)
+```
+
+**True Negative**
+
+Predicted not female and actually not female:
+
+```{r}
+TN_02 <- sum(
+  penguins_02$predicted == 0 &
+    penguins_02$sex == 0
+)
+```
+
+**False Negative**
+
+Predicted not female but actually female:
+
+```{r}
+FN_02 <- sum(
+  penguins_02$predicted == 0 &
+    penguins_02$sex == 1
+)
+```
+
+Displaying them all:
+
+```{r}
+TP_02 <- sum(
+  penguins_02$predicted == 1 &
+    penguins_02$sex == "female"
+)
+
+FP_02 <- sum(
+  penguins_02$predicted == 1 &
+    penguins_02$sex == "male"
+)
+
+TN_02 <- sum(
+  penguins_02$predicted == 0 &
+    penguins_02$sex == "male"
+)
+
+FN_02 <- sum(
+  penguins_02$predicted == 0 &
+    penguins_02$sex == "female"
+)
+```
+
+```{r}
+c(
+  TP = TP_02,
+  FP = FP_02,
+  TN = TN_02,
+  FN = FN_02
+)
+```
+
+13\. **Create the 0.2 Confusion Matrix**
+
+A conventional confusion matrix has actual classes as rows and predicted classes as columns.
+
+```{r}
+cm_02 <- table(
+  Actual = penguins_02$sex,
+  Predicted = penguins_02$predicted
+)
+
+cm_02
+```
+
+For easier interpretation:
+
+```{r}
+dimnames(cm_02) <- list(
+  "Actual" = c("Not Female", "Female"),
+  "Predicted" = c("Not Female", "Female")
+)
+
+cm_02
+```
+
+14\. **Create a Visual Confusion Matrix**
+
+We can make the confusion matrix more visually understandable.
+
+```{r}
+as.data.frame(cm_02) %>%
+  ggplot(aes(x = Predicted, y = Actual, fill = Freq)) +
+  geom_tile() +
+  geom_text(aes(label = Freq), size = 6) +
+  labs(
+    title = "Confusion Matrix — Threshold = 0.2",
+    x = "Predicted Class",
+    y = "Actual Class"
+  ) +
+  theme_minimal()
+```
+
+15\. **Repeat for Threshold = 0.5**
+
+```{r}
+penguins_05 <- penguins %>%
+  mutate(
+    predicted = ifelse(.pred_female > 0.5, 1, 0)
+  )
+```
+
+Calculate the four components:
+
+```{r}
+TP_05 <- sum(penguins_05$predicted == 1 &
+               penguins_05$sex == "female")
+
+FP_05 <- sum(penguins_05$predicted == 1 &
+               penguins_05$sex == "male")
+
+TN_05 <- sum(penguins_05$predicted == 0 &
+               penguins_05$sex == "male")
+
+FN_05 <- sum(penguins_05$predicted == 0 &
+               penguins_05$sex == "female")
+```
+
+Displaying the results:
+
+```{r}
+c(
+  TP = TP_05,
+  FP = FP_05,
+  TN = TN_05,
+  FN = FN_05
+)
+```
+
+Confusion matrix:
+
+```{r}
+cm_05 <- table(
+  Actual = penguins_05$sex,
+  Predicted = penguins_05$predicted
+)
+
+cm_05
+```
+
+Visualize:
+
+```{r}
+as.data.frame(cm_05) %>%
+  ggplot(aes(x = Predicted, y = Actual, fill = Freq)) +
+  geom_tile() +
+  geom_text(aes(label = Freq), size = 6) +
+  labs(
+    title = "Confusion Matrix — Threshold = 0.5",
+    x = "Predicted Class",
+    y = "Actual Class"
+  ) +
+  theme_minimal()
+```
+
+16\. **Repeat for Threshold = 0.8**
+
+```{r}
+penguins_08 <- penguins %>%
+  mutate(
+    predicted = ifelse(.pred_female > 0.8, 1, 0)
+  )
+```
+
+Calculate:
+
+```{r}
+TP_08 <- sum(penguins_05$predicted == 1 &
+               penguins_05$sex == "female")
+
+FP_08 <- sum(penguins_05$predicted == 1 &
+               penguins_05$sex == "male")
+
+TN_08 <- sum(penguins_05$predicted == 0 &
+               penguins_05$sex == "male")
+
+FN_08 <- sum(penguins_05$predicted == 0 &
+               penguins_05$sex == "female")
+```
+
+Displaying the results:
+
+```{r}
+c(
+  TP = TP_08,
+  FP = FP_08,
+  TN = TN_08,
+  FN = FN_08
+)
+```
+
+Confusion matrix:
+
+```{r}
+cm_08 <- table(
+  Actual = penguins_08$sex,
+  Predicted = penguins_08$predicted
+)
+
+cm_08
+```
+
+Visualize:
+
+```{r}
+as.data.frame(cm_08) %>%
+  ggplot(aes(x = Predicted, y = Actual, fill = Freq)) +
+  geom_tile() +
+  geom_text(aes(label = Freq), size = 6) +
+  labs(
+    title = "Confusion Matrix — Threshold = 0.8",
+    x = "Predicted Class",
+    y = "Actual Class"
+  ) +
+  theme_minimal()
+```
+
+17\. **A Better Approach: Automate the Confusion Matrix Calculation**
+
+The previous sections deliberately calculate TP, FP, TN and FN manually because that is exactly what the assignment asks you to understand.
+
+However, once we understand the logic, we can avoid repeating the same code.
+
+Create a function:
+
+```{r}
+calculate_confusion <- function(data, threshold) {
+  
+  # Convert probability into predicted class
+  predicted <- ifelse(
+    data$.pred_female > threshold,
+    "female",
+    "male"
+  )
+  
+  # Calculate confusion matrix
+  TP <- sum(
+    predicted == "female" &
+      data$sex == "female"
+  )
+  
+  FP <- sum(
+    predicted == "female" &
+      data$sex == "male"
+  )
+  
+  TN <- sum(
+    predicted == "male" &
+      data$sex == "male"
+  )
+  
+  FN <- sum(
+    predicted == "male" &
+      data$sex == "female"
+  )
+  
+  data.frame(
+    threshold = threshold,
+    TP = TP,
+    FP = FP,
+    TN = TN,
+    FN = FN
+  )
+}
+
+
+```
+
+```{r}
+results <- rbind(
+  calculate_confusion(penguins, 0.2),
+  calculate_confusion(penguins, 0.5),
+  calculate_confusion(penguins, 0.8)
+)
+
+
+
+# Display results
+results
+```
+
+Now, calculated all three thresholds:
+
+This produces a compact summary such as:
+
+18. **Calculate Accuracy**
+
+    Accuracy measures the proportion of all observations that were classified correctly.
+
+```{r}
+results$accuracy <- (results$TP + results$TN) /
+  (results$TP + results$TN + results$FP + results$FN)
+
+# Display results
+results
+```
+
+19\. **Calculate Precision**
+
+Precision answers:
+
+Of all observations predicted as female, how many were actually female?
+
+```{r}
+#Calculate confusion matrix results at different thresholds
+results <- rbind(
+  calculate_confusion(penguins, 0.2),
+  calculate_confusion(penguins, 0.5),
+  calculate_confusion(penguins, 0.8)
+)
+
+# Calculate accuracy
+results$accuracy <- (results$TP + results$TN) /
+  (results$TP + results$TN + results$FP + results$FN)
+
+# Calculate precision
+results$precision <- results$TP /
+  (results$TP + results$FP)
+
+# Calculate recall
+results$recall <- results$TP /
+  (results$TP + results$FN)
+
+# Calculate F1-score
+results$F1 <- 2 * (results$precision * results$recall) /
+  (results$precision + results$recall)
+
+# Display the results
+results
+```
+
+20\. **Create the Final Performance Table**
+
+Let's make the table easier to read:
+
+```{r}
+performance_table <- results %>%
+  select(
+    threshold,
+    TP,
+    FP,
+    TN,
+    FN,
+    accuracy,
+    precision,
+    recall,
+    F1
+  ) %>%
+  mutate(
+    accuracy = round(accuracy, 3),
+    precision = round(precision, 3),
+    recall = round(recall, 3),
+    F1 = round(F1, 3)
+  )
+
+kable(
+  performance_table,
+  col.names = c(
+    "Threshold",
+    "TP",
+    "FP",
+    "TN",
+    "FN",
+    "Accuracy",
+    "Precision",
+    "Recall",
+    "F1 Score"
+  ),
+  caption = "Classification Performance at Different Probability Thresholds"
+)
+```
+
+21\. **Format the Metrics as Percentages**
+
+For a more readable final presentation:
+
+```{r}
+performance_percent <- results %>%
+  select(
+    threshold,
+    accuracy,
+    precision,
+    recall,
+    F1
+  ) %>%
+  mutate(
+    across(
+      c(accuracy, precision, recall, F1),
+      ~ round(.x * 100, 2)
+    )
+  )
+
+kable(
+  performance_percent,
+  col.names = c(
+    "Threshold",
+    "Accuracy (%)",
+    "Precision (%)",
+    "Recall (%)",
+    "F1 Score (%)"
+  )
+)
+```
+
+22\. **Compare the Metrics Across Thresholds**
+
+A useful visualization is to show how the metrics change as the threshold changes.
+
+First reshape the data:
+
+```{r}
+metric_data <- results %>%
+  select(
+    threshold,
+    accuracy,
+    precision,
+    recall,
+    F1
+  ) %>%
+  pivot_longer(
+    cols = c(accuracy, precision, recall, F1),
+    names_to = "metric",
+    values_to = "value"
+  )
+
+metric_data
+```
+
+Plot
+
+```{r}
+ggplot(
+  metric_data,
+  aes(x = threshold, y = value, group = metric)
+) +
+  geom_line() +
+  geom_point(size = 3) +
+  scale_y_continuous(
+    limits = c(0, 1)
+  ) +
+  labs(
+    title = "Classification Metrics Across Probability Thresholds",
+    x = "Probability Threshold",
+    y = "Metric Value"
+  ) +
+  facet_wrap(~ metric) +
+  theme_minimal()
+```
+
+This makes the threshold trade-off much easier to understand.
+
+23\. **Analyze What Happens When the Threshold Changes**
+
+This is an important part of the assignment.
+
+**Threshold = 0.2**
+
+At a low threshold, the model only needs relatively weak evidence to predict the positive class.
+
+Therefore:
+
+More positive predictions
+
+↓
+
+More true positives
+
+↓
+
+Usually fewer false negatives
+
+↓
+
+Usually more false positives
+
+**Threshold = 0.5**
+
+The 0.5 threshold is commonly used as a default classification cutoff.
+
+The model predicts the positive class when,
+
+.pred_female \> 0.5
+
+However, there is nothing mathematically special about 0.5 for every application.
+
+It is simply a conventional cutoff.
+
+**Threshold = 0.8**
+
+At a high threshold, the model requires much stronger evidence before predicting the positive class.
+
+Therefore:
+
+Fewer positive predictions
+
+↓
+
+Usually fewer false positives
+
+↓
+
+Usually higher precision
+
+↓
+
+Usually more false negatives
+
+Consequently, a high threshold generally favors precision at the expense of recall.
+
+24\. **Real-World Use Case for a 0.2 Threshold**
+
+A 0.2 threshold is preferable when failing to identify a positive case is particularly costly. For example, consider a medical screening system designed to identify patients who may have a serious disease. Suppose the model estimates:
+
+Probability of disease = 0.25
+
+With a 0.5 threshold, the system would classify the patient as negative.
+
+With a 0.2 threshold, the patient would be classified as positive and sent for additional testing.
+
+This can be desirable because:
+
+Missing a genuinely sick patient can be much more harmful than sending a healthy patient for an additional diagnostic test. Thus, a lower threshold can increase recall/sensitivity, helping the system identify more actual positive cases.
+
+25\. **Real-World Use Case for a 0.8 Threshold**
+
+A 0.8 threshold is preferable when false positives are particularly costly. For example, consider an automated system that approves a high-value financial transaction or flags a customer for a costly intervention. If the system predicts the positive class too easily, many legitimate cases could be incorrectly flagged. Using a threshold of 0.8 means the model needs strong evidence before making the positive classification.
+
+This can reduce false positives and improve precision.
+
+Another intuitive example is an automated system that sends potentially fraudulent transactions for manual investigation. If investigators have limited capacity, you may prefer to review only transactions for which the model has very high confidence.
+
+26\. **Optional: Create All Three Confusion Matrices in One Plot**
+
+Instead of three completely separate plots, we can create a single comparison visualization.
+
+```{r}
+confusion_long <- do.call(
+  rbind,
+  lapply(
+    thresholds,
+    function(threshold) {
+      
+      predicted <- ifelse(
+        penguins$.pred_female > threshold,
+        1,
+        0
+      )
+      
+      data.frame(
+        threshold = threshold,
+        Actual = factor(
+          penguins$sex,
+          levels = c("male", "female"),
+          labels = c("Not Female", "Female")
+        ),
+        Predicted = factor(
+          predicted,
+          levels = c(0, 1),
+          labels = c("Not Female", "Female")
+        )
+      )
+    }
+  )
+)
+
+confusion_long
+```
+
+Count the combinations:
+
+```{r}
+confusion_long <- confusion_long %>%
+  count(threshold, Actual, Predicted)
+```
+
+Plotting
+
+```{r}
+ggplot(
+  confusion_long,
+  aes(x = Predicted, y = Actual, fill = n)
+) +
+  geom_tile() +
+  geom_text(aes(label = n), size = 5) +
+  facet_wrap(~ threshold) +
+  labs(
+    title = "Confusion Matrices at Different Probability Thresholds",
+    x = "Predicted Class",
+    y = "Actual Class"
+  ) +
+  theme_minimal()
+```
+
+This gives you one figure containing:
+
+Threshold 0.2
+
+Threshold 0.5
+
+Threshold 0.8
+
+and allows direct visual comparison.
+
+27. **Optional: Calculate the Model Error Rate**
+
+Because the assignment asks about the null error rate, it is useful to compare it directly with model error.
+
+```{r}
+model_error <- results %>%
+  mutate(
+    error_rate = 1 - accuracy
+  ) %>%
+  select(
+    threshold,
+    error_rate
+  )
+
+model_error
+```
+
+Compare the model's error with the null error rate:
+
+```{r}
+comparison <- results %>%
+  mutate(
+    model_error = 1 - accuracy,
+    null_error = null_error_rate
+  ) %>%
+  select(
+    threshold,
+    model_error,
+    null_error
+  )
+
+comparison
+```
+
+You can also calculate how much the model improves over the null baseline:
+
+```{r}
+comparison <- comparison %>%
+  mutate(
+    improvement = null_error - model_error
+  )
+
+comparison
+```
